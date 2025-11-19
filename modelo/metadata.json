@@ -1,0 +1,10 @@
+{
+  "min_faces_per_person": 50,
+  "resize": 0.5,
+  "top_n": null,
+  "pca_components": 150,
+  "test_size": 0.25,
+  "random_state": 42,
+  "n_classes": 12,
+  "n_samples": 1560
+}
