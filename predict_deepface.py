@@ -1,68 +1,72 @@
 # predict_deepface.py
 import cv2
+import json
 import numpy as np
-import joblib
 from deepface import DeepFace
 from retinaface import RetinaFace
 
-# === CARGA DE MODELOS ===
-clf = joblib.load("modelo/clasificador.pkl")
-encoder = joblib.load("modelo/encoder.pkl")
+# --------------------------------------
+# CARGAR embeddings registrados
+# --------------------------------------
+with open("modelo/embeddings.json", "r") as f:
+    data = json.load(f)
+
+registered_names = [item["name"] for item in data]
+registered_embeddings = np.array([item["embedding"] for item in data], dtype=np.float32)
+
+# --------------------------------------
+# DISTANCIA COSENO
+# --------------------------------------
+def cosine_similarity(a, b):
+    a = np.array(a)
+    b = np.array(b)
+    return np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b))
+
+
+UMBRAL_DESCONOCIDO = 0.74   # Ajuste de desconcocido
 
 def predecir_rostro(imagen_path):
-    # Leer imagen
-    img = cv2.imread(imagen_path)
 
-    if img is None:
-        return "ERROR: Imagen no encontrada.", None
-
-    # ----------------------
-    # 1. DETECTAR ROSTRO
-    # ----------------------
     try:
         detections = RetinaFace.detect_faces(imagen_path)
     except Exception as e:
-        return f"Error al detectar rostro: {e}", None
+        return f"Error detectando rostro: {e}", None
 
-    if not isinstance(detections, dict):
-        return "No se detecta rostro en la imagen.", None
+    if detections is None or detections == {}:
+        return "No se detecta rostro.", None
 
-    # Tomamos el primer rostro del diccionario
-    face_key = list(detections.keys())[0]
-    face_info = detections[face_key]
+    # tomar primer rostro
+    key = list(detections.keys())[0]
+    x1, y1, x2, y2 = detections[key]["facial_area"]
 
-    # RetinaFace devuelve "facial_area" como lista [x1, y1, x2, y2]
-    x1, y1, x2, y2 = face_info["facial_area"]
-
-    # recorte
+    img = cv2.imread(imagen_path)
     rostro = img[y1:y2, x1:x2]
 
     if rostro.size == 0:
-        return "Rostro vacío o inválido.", None
+        return "Rostro inválido.", None
 
-    # ----------------------
-    # 2. OBTENER EMBEDDING con FaceNet512
-    # ----------------------
-    try:
-        embedding_info = DeepFace.represent(
-            img_path=imagen_path,
-            model_name="Facenet512",
-            detector_backend="retinaface",
-            enforce_detection=False
-        )[0]
+    # embedding con FaceNet512
+    emb_info = DeepFace.represent(
+        img_path=imagen_path,
+        model_name="Facenet512",
+        detector_backend="retinaface",
+        enforce_detection=False
+    )[0]
 
-        embedding = np.array(embedding_info["embedding"]).reshape(1, -1)
-    except Exception as e:
-        return f"Error al generar embedding: {e}", None
+    emb = np.array(emb_info["embedding"])
 
-    # ----------------------
-    # 3. PREDECIR
-    # ----------------------
-    pred = clf.predict(embedding)
-    nombre = encoder.inverse_transform(pred)[0]
+    # calcular similitudes
+    similitudes = [cosine_similarity(emb, ref) for ref in registered_embeddings]
+    mejor = np.argmax(similitudes)
+    mejor_sim = similitudes[mejor]
 
-    # Dibujar caja
-    img_box = img.copy()
-    cv2.rectangle(img_box, (x1, y1), (x2, y2), (0, 255, 0), 2)
+    if mejor_sim < UMBRAL_DESCONOCIDO:
+        pred = "Desconocido"
+    else:
+        pred = registered_names[mejor]
 
-    return nombre, img_box
+    # dibujar caja
+    img2 = img.copy()
+    cv2.rectangle(img2, (x1, y1), (x2, y2), (0, 255, 0), 2)
+
+    return pred, img2
