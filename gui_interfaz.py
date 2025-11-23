@@ -1,4 +1,4 @@
-# gui_interfaz.py (versión compatible con modelo híbrido real)
+# gui_interfaz.py (versión corregida con diagnóstico)
 import os
 import subprocess
 import tkinter as tk
@@ -43,30 +43,58 @@ class FaceApp:
         btn_webcam = tk.Button(frame_botones, text="Webcam en tiempo real", width=18, command=self.abrir_webcam)
         btn_webcam.grid(row=0, column=4, padx=5)
 
-    # ----------------------------------------------------------------------
     def cargar_imagen(self):
         global RUTA_ULTIMA_IMAGEN
         file_path = filedialog.askopenfilename(
-            filetypes=[("Imágenes", "*.jpg;*.jpeg;*.png")]
+            title="Seleccionar imagen",
+            filetypes=[
+                ("Imágenes", "*.jpg *.jpeg *.png *.bmp"),
+                ("JPEG", "*.jpg *.jpeg"),
+                ("PNG", "*.png"),
+                ("Todos", "*.*")
+            ]
         )
         if not file_path:
             return
 
-        RUTA_ULTIMA_IMAGEN = file_path
+        # Normalizar ruta
+        RUTA_ULTIMA_IMAGEN = os.path.normpath(file_path)
+        
+        print(f"\n{'='*60}")
+        print(f"IMAGEN CARGADA")
+        print(f"Ruta: {RUTA_ULTIMA_IMAGEN}")
+        print(f"Existe: {os.path.exists(RUTA_ULTIMA_IMAGEN)}")
+        
+        # Verificar con OpenCV
+        test_img = cv2.imread(RUTA_ULTIMA_IMAGEN)
+        if test_img is None:
+            print("❌ No se puede leer con cv2.imread()")
+            messagebox.showerror("Error", "No se pudo leer la imagen")
+            return
+        print(f"✓ Imagen válida: {test_img.shape}")
+        print(f"{'='*60}\n")
 
-        img = Image.open(file_path).resize((400, 400))
+        img = Image.open(RUTA_ULTIMA_IMAGEN).resize((400, 400))
         self.tk_img = ImageTk.PhotoImage(img)
         self.label_imagen.config(image=self.tk_img, text="")
         self.label_pred.config(text="Predicción: -")
 
-    # ----------------------------------------------------------------------
     def predecir(self):
         global RUTA_ULTIMA_IMAGEN
         if not RUTA_ULTIMA_IMAGEN:
             messagebox.showwarning("Aviso", "Primero carga una imagen.")
             return
 
+        print(f"\n{'='*60}")
+        print(f"PREDICIENDO")
+        print(f"Ruta: {RUTA_ULTIMA_IMAGEN}")
+        
         nombre, rostro = predecir_rostro_hibrido(RUTA_ULTIMA_IMAGEN)
+        
+        print(f"Resultado: {nombre}")
+        print(f"Rostro: {rostro is not None}")
+        print(f"{'='*60}\n")
+        
         self.label_pred.config(text=f"Predicción: {nombre}")
 
         if rostro is not None:
@@ -74,8 +102,9 @@ class FaceApp:
             img_pil = Image.fromarray(rostro_rgb).resize((400, 400))
             self.tk_img = ImageTk.PhotoImage(img_pil)
             self.label_imagen.config(image=self.tk_img, text="")
+        else:
+            messagebox.showinfo("Info", f"Resultado: {nombre}")
 
-    # ----------------------------------------------------------------------
     def registrar_rostro(self):
         global RUTA_ULTIMA_IMAGEN
         if not RUTA_ULTIMA_IMAGEN:
@@ -95,14 +124,12 @@ class FaceApp:
         except Exception as e:
             messagebox.showerror("Error", f"Error al registrar:\n{e}")
 
-    # ----------------------------------------------------------------------
     def registrar_rostro_webcam(self):
         if not os.path.exists("registrar_webcam.py"):
             messagebox.showerror("Error", "No se encontró registrar_webcam.py")
             return
         subprocess.Popen(["python", "registrar_webcam.py"])
 
-    # ----------------------------------------------------------------------
     def abrir_webcam(self):
         if not os.path.exists("webcam_realtime.py"):
             messagebox.showerror("Error", "No se encontró webcam_realtime.py")
