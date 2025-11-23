@@ -1,72 +1,90 @@
-# predict_deepface.py
+# predict_hibrido.py
 import cv2
-import json
 import numpy as np
 from deepface import DeepFace
 from retinaface import RetinaFace
 
-# --------------------------------------
-# CARGAR embeddings registrados
-# --------------------------------------
-with open("modelo/embeddings.json", "r") as f:
-    data = json.load(f)
+import json
+import os
 
-registered_names = [item["name"] for item in data]
-registered_embeddings = np.array([item["embedding"] for item in data], dtype=np.float32)
-
-# --------------------------------------
-# DISTANCIA COSENO
-# --------------------------------------
-def cosine_similarity(a, b):
-    a = np.array(a)
-    b = np.array(b)
-    return np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b))
+# 🔥 Umbral recomendado (FaceNet512)
+UMBRAL_DESCONOCIDO = 12.0
 
 
-UMBRAL_DESCONOCIDO = 0.74   # Ajuste de desconcocido
+# ============================================================
+# 📌 Leer los embeddings guardados
+# ============================================================
+def cargar_embeddings():
+    file = "embeddings_hibrido.json"
+    if not os.path.exists(file):
+        print("⚠ No existen embeddings aún.")
+        return []
+    with open(file, "r") as f:
+        return json.load(f)
 
-def predecir_rostro(imagen_path):
 
-    try:
-        detections = RetinaFace.detect_faces(imagen_path)
-    except Exception as e:
-        return f"Error detectando rostro: {e}", None
-
-    if detections is None or detections == {}:
-        return "No se detecta rostro.", None
-
-    # tomar primer rostro
-    key = list(detections.keys())[0]
-    x1, y1, x2, y2 = detections[key]["facial_area"]
-
-    img = cv2.imread(imagen_path)
-    rostro = img[y1:y2, x1:x2]
-
-    if rostro.size == 0:
-        return "Rostro inválido.", None
-
-    # embedding con FaceNet512
+# ============================================================
+# 📌 Obtener embedding del rostro
+# ============================================================
+def obtener_embedding(path_img):
     emb_info = DeepFace.represent(
-        img_path=imagen_path,
+        img_path=path_img,
         model_name="Facenet512",
         detector_backend="retinaface",
         enforce_detection=False
     )[0]
 
-    emb = np.array(emb_info["embedding"])
+    return np.array(emb_info["embedding"])
 
-    # calcular similitudes
-    similitudes = [cosine_similarity(emb, ref) for ref in registered_embeddings]
-    mejor = np.argmax(similitudes)
-    mejor_sim = similitudes[mejor]
 
-    if mejor_sim < UMBRAL_DESCONOCIDO:
-        pred = "Desconocido"
-    else:
-        pred = registered_names[mejor]
+# ============================================================
+# 📌 Detectar rostro con RetinaFace
+# ============================================================
+def detectar_rostro(img):
+    try:
+        det = RetinaFace.detect_faces(img)
+    except:
+        return None, None
 
-    # dibujar caja
-    img2 = img.copy()
-    cv2.rectangle(img2, (x1, y1), (x2, y2), (0, 255, 0), 2)
+    if not isinstance(det, dict) or len(det) == 0:
+        return None, None
 
-    return pred, img2
+    key = list(det.keys())[0]
+    x1, y1, x2, y2 = det[key]["facial_area"]
+
+    rostro = img[y1:y2, x1:x2]
+    return rostro, (x1, y1, x2, y2)
+
+
+# ============================================================
+# 📌 Predicción híbrida
+# ============================================================
+def predecir_rostro_hibrido(path_img):
+    embeddings = cargar_embeddings()
+    if not embeddings:
+        return "Sin datos", None
+
+    img = cv2.imread(path_img)
+    rostro, box = detectar_rostro(img)
+
+    if rostro is None:
+        return "No detectado", None
+
+    emb_new = obtener_embedding(path_img)
+
+    mejor_dist = 9999
+    mejor_nombre = "Desconocido"
+
+    for item in embeddings:
+        emb_reg = np.array(item["embedding"])
+        dist = np.linalg.norm(emb_new - emb_reg)
+
+        if dist < mejor_dist:
+            mejor_dist = dist
+            mejor_nombre = item["name"]
+
+    # Aplicar umbral
+    if mejor_dist > UMBRAL_DESCONOCIDO:
+        mejor_nombre = "Desconocido"
+
+    return mejor_nombre, rostro

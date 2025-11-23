@@ -1,4 +1,4 @@
-# gui_interfaz.py
+# gui_interfaz.py (versión compatible con modelo híbrido real)
 import os
 import subprocess
 import tkinter as tk
@@ -6,15 +6,16 @@ from tkinter import filedialog, messagebox, simpledialog
 from PIL import Image, ImageTk
 import cv2
 
-from predict_deepface import predecir_rostro
-from model_utils import agregar_rostro, reentrenar_clasificador
+from predict_hibrido import predecir_rostro_hibrido
+from model_utils import agregar_rostro_hibrido, reentrenar_hibrido
 
 RUTA_ULTIMA_IMAGEN = None
+
 
 class FaceApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("Clasificación de Rostros - DeepFace / FaceNet")
+        self.root.title("Reconocimiento Facial - Modelo Híbrido")
         self.root.geometry("900x650")
 
         self.label_imagen = tk.Label(root, text="No hay imagen cargada")
@@ -42,7 +43,7 @@ class FaceApp:
         btn_webcam = tk.Button(frame_botones, text="Webcam en tiempo real", width=18, command=self.abrir_webcam)
         btn_webcam.grid(row=0, column=4, padx=5)
 
-    # Cargar imagen desde archivo
+    # ----------------------------------------------------------------------
     def cargar_imagen(self):
         global RUTA_ULTIMA_IMAGEN
         file_path = filedialog.askopenfilename(
@@ -50,31 +51,31 @@ class FaceApp:
         )
         if not file_path:
             return
+
         RUTA_ULTIMA_IMAGEN = file_path
 
-        img = Image.open(file_path)
-        img = img.resize((400, 400))
+        img = Image.open(file_path).resize((400, 400))
         self.tk_img = ImageTk.PhotoImage(img)
         self.label_imagen.config(image=self.tk_img, text="")
         self.label_pred.config(text="Predicción: -")
 
-    # Predicción con modelo
+    # ----------------------------------------------------------------------
     def predecir(self):
         global RUTA_ULTIMA_IMAGEN
         if not RUTA_ULTIMA_IMAGEN:
             messagebox.showwarning("Aviso", "Primero carga una imagen.")
             return
 
-        nombre, img_box = predecir_rostro(RUTA_ULTIMA_IMAGEN)
+        nombre, rostro = predecir_rostro_hibrido(RUTA_ULTIMA_IMAGEN)
         self.label_pred.config(text=f"Predicción: {nombre}")
 
-        if img_box is not None:
-            img_rgb = cv2.cvtColor(img_box, cv2.COLOR_BGR2RGB)
-            pil_img = Image.fromarray(img_rgb).resize((400, 400))
-            self.tk_img = ImageTk.PhotoImage(pil_img)
+        if rostro is not None:
+            rostro_rgb = cv2.cvtColor(rostro, cv2.COLOR_BGR2RGB)
+            img_pil = Image.fromarray(rostro_rgb).resize((400, 400))
+            self.tk_img = ImageTk.PhotoImage(img_pil)
             self.label_imagen.config(image=self.tk_img, text="")
 
-    # Registrar imagen manual
+    # ----------------------------------------------------------------------
     def registrar_rostro(self):
         global RUTA_ULTIMA_IMAGEN
         if not RUTA_ULTIMA_IMAGEN:
@@ -86,30 +87,27 @@ class FaceApp:
             return
 
         try:
-            agregar_rostro(RUTA_ULTIMA_IMAGEN, nombre)
-            ok = reentrenar_clasificador()
+            agregar_rostro_hibrido(RUTA_ULTIMA_IMAGEN, nombre)
+            ok = reentrenar_hibrido()
+
             if ok:
-                messagebox.showinfo("Éxito", f"Rostro '{nombre}' registrado y modelo actualizado.")
+                messagebox.showinfo("Éxito", f"Rostro '{nombre}' registrado.")
         except Exception as e:
-            messagebox.showerror("Error", f"No se pudo registrar el rostro:\n{e}")
+            messagebox.showerror("Error", f"Error al registrar:\n{e}")
 
-    # NUEVO → Registrar rostro con webcam
+    # ----------------------------------------------------------------------
     def registrar_rostro_webcam(self):
-        script = "registrar_webcam.py"
-        if not os.path.exists(script):
-            messagebox.showerror("Error", f"No se encontró {script}")
+        if not os.path.exists("registrar_webcam.py"):
+            messagebox.showerror("Error", "No se encontró registrar_webcam.py")
             return
+        subprocess.Popen(["python", "registrar_webcam.py"])
 
-        subprocess.Popen(["python", script])
-
-    # Webcam en tiempo real
+    # ----------------------------------------------------------------------
     def abrir_webcam(self):
-        script = "webcam_realtime.py"
-        if not os.path.exists(script):
-            messagebox.showerror("Error", f"No se encontró {script}")
+        if not os.path.exists("webcam_realtime.py"):
+            messagebox.showerror("Error", "No se encontró webcam_realtime.py")
             return
-
-        subprocess.Popen(["python", script])
+        subprocess.Popen(["python", "webcam_realtime.py"])
 
 
 if __name__ == "__main__":
